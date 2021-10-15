@@ -1,0 +1,20 @@
+{
+    "files.associations": {
+        "libbpf.h": "c",
+        "bpf_helpers.h": "c",
+        "bpflowmon.h": "c",
+        "if_ether.h": "c",
+        "vmlinux.h": "c",
+        "inet.h": "c",
+        "compare": "c",
+        "type_traits": "c",
+        "types.h": "c",
+        "unistd.h": "c",
+        "getopt.h": "c",
+        "to_json.h": "c",
+        "bpflowmon_defs.h": "c",
+        "flow_mgmt.h": "c",
+        "if_link.h": "c",
+        "limits": "c"
+    }
+}
