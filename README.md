@@ -44,9 +44,10 @@ Optional options:
         -O      --Output              <dir>: directory where to save dumped flows. [default to current dir]
         -L      --Log                 <file>: log messages to file [default: stdout]
         -M      --Map                 <file>: map for flow_stats that is to be reused (full path) [default: /sys/fs/bpf/xdp/globals/flow_stats
-        -F      --Folder              <dir>: Folder where the maps are to be saved (full path) [default: /sys/fs/bpf/xdp/globals/
+        -F      --Folder              <dir>:    Folder where the maps are to be saved (full path) [default: /sys/fs/bpf/xdp/globals/
         -i      --interval            <interval>: reporting period in sec [default=1s; 0=print once and exit]
         -j      --json                encode flow info as json
+        -t      --test                <duration> dont start flow management and print pkt count after duration and detach xdp program
 ```
 ### examples:
 attach to eth0 and parse all packets:
