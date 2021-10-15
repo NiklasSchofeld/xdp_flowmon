@@ -1,7 +1,7 @@
 Work in progress.
 
 The performance tests are done with two machines (see specs below) wich are connected via 10G ethernet interfaces.
-One acts as a sender, which sends traffic to the receiver with the XDP BPF program running. For testing of the XDP_REDIRECT performance impact, a veth interface is set up on the receiver, where packets are redirected to.
+One acts as a sender, which sends traffic to the receiver with the XDP BPF program running. For testing of the XDP_REDIRECT performance impact, a veth interface is set up on the receiver, where packets are redirected to. Every test runs for 30 seconds.
 
 To see RAM usage, a copy of /proc/meminfo and /proc/slabinfo were taken before and while the machine is under load. Since the RAM usage primarily depends on the size of the used maps and the programs, it does not change much while running.
 Duration measured with bpf_prog_test_run() is about 300ns on the receiver. This duration can change drastically on other machines. (I measured 150ns on one and >10000ns on an other)
