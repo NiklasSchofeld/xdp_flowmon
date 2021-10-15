@@ -69,4 +69,3 @@ attach to eth0 in driver mode and wlan0 in generic mode, reuse the flow_stats ma
 
 ## Installation
 To use one of the programs in the `src` directory, clone this repository and run make in the directory of the program.
-# --------------------------------------------------------------------------------
