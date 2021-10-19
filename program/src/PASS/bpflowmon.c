@@ -647,13 +647,13 @@ int main(int argc, char **argv)
 		int prog_fd;
 		memcpy(data_in, &pkt_v4, sizeof(pkt_v4));
 
-		err = bpf_prog_test_run(main_prog_fd, 1000000, &data_in, sizeof(pkt_v4), &data_out, &size, &retval, &duration);
+		err = bpf_prog_test_run(main_prog_fd, 100000000, &data_in, sizeof(pkt_v4), &data_out, &size, &retval, &duration);
 		if (err) {
 			printf("test run failed: %d\n", err);
 			goto cleanup;
 		}
 
-		printf("Successfully ran 1000000 test run.\n");
+		printf("Successfully ran 100000000 test run.\n");
 		printf("average duration: %d ns\n", duration);
 		printf("last return value: %d\n", retval);
 		
