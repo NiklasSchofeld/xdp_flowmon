@@ -11,7 +11,7 @@
 
 /* application limits */
 #define MAX_PROGS       32
-#define MAX_FLOWS       421000//65536//131072//65536
+#define MAX_FLOWS       421000//65536//131072
 #define VLAN_MAX_DEPTH  20
 
 /* keys for jump table programs protocols */

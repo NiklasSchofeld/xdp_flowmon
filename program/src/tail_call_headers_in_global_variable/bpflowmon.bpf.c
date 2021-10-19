@@ -1,9 +1,3 @@
-/*
-find and replace data_meta:
-(^.*)(data_meta)
-// $1
-*/
-
 //#include "vmlinux.h"          //all kernel types
 #include "bpflowmon.h"          //includes also vmlinux.h
 #include <bpf/bpf_helpers.h>
@@ -39,6 +33,9 @@ __u16 offset_ip_opts;
 struct flow_id flow_id;
 struct flow_info flow_info;
 struct tcp_options_words tcp_opts;
+
+__u32 pkts = 0;
+__u32 err_pkts = 0;
 /************************************************************************************************************************/
 /* structs */
 
@@ -337,24 +334,11 @@ int parse_ip4(struct xdp_md *ctx)
     int err, hdrsize, action=0, key=0;
     __u8 proto;
     void *data, *data_end;
-    // struct meta_info *data_meta;
     struct iphdr *iph_p;
 
     /* init data pointers */
-    // data_meta	= (void*) (unsigned long)ctx->data_meta;
     data		= (void*) (unsigned long)ctx->data;
 	data_end	= (void*) (unsigned long)ctx->data_end;
-    
-    /* bounds check - data_meta */
-	// if ((void *)(data_meta + 1) > data){
-	// 	#ifdef __DEBUG__
-	// 	bpf_printk("---BPF DEBUG--- ERROR: Bounds check failed - data_meta + 1 > data\n");
-	// 	#endif
-	// 	return DEFAULT_XDP_FAIL_ACTION;
-	// }
-
-    /* offset */
-    // offset = data_meta->hdr_crsr_offset;
 
     /* check that offset is not too big (to avoid trouble with the verifier) */
     if (offset_l3 > MAX_OFFSET_ETHERNET)
@@ -387,17 +371,9 @@ int parse_ip4(struct xdp_md *ctx)
     if (hdrsize > 20)
         offset_ip_opts = offset_l3 + 20;
 
-    /* set meta data */
-    // data_meta->hdr_crsr_offset = offset + hdrsize;
-    // data_meta->l4_offset = data_meta->hdr_crsr_offset;
-    // #ifdef __VERBOSE__
-    // bpf_printk("---BPF DEBUG--- INFO: offset = %d\n", data_meta->hdr_crsr_offset);
-    // #endif
-
     offset_l4 = offset_l3 + hdrsize;
     
     /**********HEADER PARSING**********/
-    // iph = *iph_p;
     flow_id.saddr.v4 = iph_p->saddr;
     flow_id.daddr.v4 = iph_p->daddr;
     flow_id.proto    = proto;
@@ -433,24 +409,11 @@ int parse_ip6(struct xdp_md *ctx)
     int err, i, key=0;
     __u8 proto;
     void *data, *data_end;
-    // struct meta_info *data_meta;
     struct ipv6hdr *ip6h_p;
 
     /* init data pointers */
-    // data_meta	= (void*) (unsigned long)ctx->data_meta;
     data		= (void*) (unsigned long)ctx->data;
 	data_end	= (void*) (unsigned long)ctx->data_end;
-    
-    /* bounds check - data_meta */
-	// if ((void *)(data_meta + 1) > data){
-	// 	#ifdef __DEBUG__
-	// 	bpf_printk("---BPF DEBUG--- ERROR: Bounds check failed - data_meta + 1 > data\n");
-	// 	#endif
-	// 	return DEFAULT_XDP_FAIL_ACTION;
-	// }
-
-    /* offset */
-    // offset = data_meta->hdr_crsr_offset;
 
     /* check that offset is not too big (to avoid trouble with the verifier) */
     if (offset_l4 > MAX_OFFSET_ETHERNET)
@@ -472,14 +435,9 @@ int parse_ip6(struct xdp_md *ctx)
     bpf_printk("---BPF DEBUG--- INFO: layer 4 proto = %d\n", proto);
     #endif
 
-    /* set meta data */
-    // data_meta->hdr_crsr_offset = offset + sizeof(struct ipv6hdr);
-    // data_meta->l4_offset = data_meta->hdr_crsr_offset;
-
     offset_l4 = offset_l3 + sizeof(struct ipv6hdr);
     
     /**********HEADER PARSING**********/
-    // ip6h = *ip6h_p;
     memcpy(flow_id.saddr.v6, ip6h_p->saddr.in6_u.u6_addr8, 16);
     memcpy(flow_id.daddr.v6, ip6h_p->daddr.in6_u.u6_addr8, 16);
     flow_id.proto = proto;
@@ -517,24 +475,11 @@ int parse_udp(struct xdp_md *ctx)
 
     int err, key=0;
     void *data, *data_end;
-    // struct meta_info *data_meta;
     struct udphdr *udph_p;
 
     /* init data pointers */
-    // data_meta	= (void*) (unsigned long)ctx->data_meta;
     data		= (void*) (unsigned long)ctx->data;
 	data_end	= (void*) (unsigned long)ctx->data_end;
-    
-    /* bounds check - data_meta */
-	// if ((void *)(data_meta + 1) > data){
-	// 	#ifdef __DEBUG__
-	// 	bpf_printk("---BPF DEBUG--- ERROR: Bounds check failed - data_meta + 1 > data\n");
-	// 	#endif
-	// 	return DEFAULT_XDP_FAIL_ACTION;
-	// }
-
-    /* offset */
-    // offset = data_meta->hdr_crsr_offset;
 
     /* check that offset is not too big (to avoid trouble with the verifier) */
     if (offset_l4 > MAX_OFFSET_ETHERNET)
@@ -551,17 +496,13 @@ int parse_udp(struct xdp_md *ctx)
         return DEFAULT_XDP_FAIL_ACTION;
 	}
 
-    /* set meta data */
-    // data_meta->hdr_crsr_offset = offset + sizeof(struct udphdr);    //actuallly the udp data position = udp header start + 8
-    // data_meta->payload_offset = offset + sizeof(struct udphdr);
-
-
 
     /**********HEADER PARSING**********/
-    // udph = *udph_p;
     flow_id.sport = udph_p->source;
     flow_id.dport = udph_p->dest;
     /*********************************/
+
+    offset_l5 = offset_l4 + sizeof(*udph_p);
 
     /* tail cal dpi or exit */
     finish_parsing(ctx);
@@ -592,27 +533,14 @@ int parse_tcp(struct xdp_md *ctx)
     __u16 offset_options;
     __u8 hdrlen;
     void *data, *data_end;
-    // struct meta_info *data_meta;
     struct tcphdr *tcph_p;
     __u32 *options;
     unsigned short options_len;
     struct tcp_options_words opt_wrd = { 0 };
 
     /* init data pointers */
-    // data_meta	= (void*) (unsigned long)ctx->data_meta;
     data		= (void*) (unsigned long)ctx->data;
 	data_end	= (void*) (unsigned long)ctx->data_end;
-    
-    /* bounds check - data_meta */
-	// if ((void *)(data_meta + 1) > data){
-	// 	#ifdef __DEBUG__
-	// 	bpf_printk("---BPF DEBUG--- ERROR: Bounds check failed - data_meta + 1 > data\n");
-	// 	#endif
-	// 	return DEFAULT_XDP_FAIL_ACTION;
-	// }
-
-    /* offset */
-    // offset = data_meta->hdr_crsr_offset;
 
     /* check that offset is not too big (to avoid trouble with the verifier) */
     if (offset_l4 > MAX_OFFSET_ETHERNET)
@@ -640,7 +568,6 @@ int parse_tcp(struct xdp_md *ctx)
         bpf_printk("---BPF DEBUG--- INFO: TCP parsing, options len: %d\n", options_len);
         #endif
 
-        // memcpy(headers->tcp_opts.option_words, options, options_len);
         switch(options_len)   //my loop and memcpy tries caused too much verifier complains.
         {
             case 40:
@@ -732,23 +659,12 @@ int parse_tcp(struct xdp_md *ctx)
     // note: (options is a multiple of 4 byte)
 
     /**********HEADER PARSING**********/
-    // tcph = *tcph_p;
     flow_id.sport = tcph_p->source;
     flow_id.dport = tcph_p->dest;
     #ifdef __FLOW_TCP_OPTS__
     tcp_opts = opt_wrd;
-    // err = bpf_map_update_elem(&tcp_opts_scratch_buffer, &key, &opt_wrd, BPF_ANY);    //TODO check error
-    // if (err)
-    //     ;
     #endif
     /*********************************/
-
-    /* set meta data */
-    // data_meta->hdr_crsr_offset = offset + hdrlen;    //actuallly the tcp data position = tcp header start + 8
-    // data_meta->payload_offset = offset + hdrlen;
-    // #ifdef __VERBOSE__
-    // bpf_printk("---BPF DEBUG--- INFO: offset = %d\n", data_meta->hdr_crsr_offset);
-    // #endif
 
     offset_l5 = offset_l4 + hdrlen;
 
@@ -780,24 +696,11 @@ int parse_icmp(struct xdp_md *ctx)
     int err, hdrsize, key=0;
     __u8 type;
     void *data, *data_end;
-    // struct meta_info *data_meta;
     struct icmphdr *icmph_p;
 
     /* init data pointers */
-    // data_meta	= (void*) (unsigned long)ctx->data_meta;
     data		= (void*) (unsigned long)ctx->data;
 	data_end	= (void*) (unsigned long)ctx->data_end;
-    
-    /* bounds check - data_meta */
-	// if ((void *)(data_meta + 1) > data){
-	// 	#ifdef __DEBUG__
-	// 	bpf_printk("---BPF DEBUG--- ERROR: Bounds check failed - data_meta + 1 > data\n");
-	// 	#endif
-	// 	return DEFAULT_XDP_FAIL_ACTION;
-	// }
-
-    /* offset */
-    // offset = data_meta->hdr_crsr_offset;
 
     /* check that offset is not too big (to avoid trouble with the verifier) */
     if (offset_l4 > MAX_OFFSET_ETHERNET)
@@ -814,12 +717,7 @@ int parse_icmp(struct xdp_md *ctx)
         return DEFAULT_XDP_FAIL_ACTION;
 	}
 
-    /* set meta data */
-    // data_meta->hdr_crsr_offset = offset + sizeof(struct icmphdr);    //end of icmp header
-    // data_meta->payload_offset = offset + sizeof(struct icmphdr);
-
     /**********HEADER PARSING**********/
-    // icmph = *icmph_p;
     //TODO maybe not suitable for flow monitoring
     if (icmph_p->type == ICMP_ECHOREPLY || icmph_p->type == ICMP_ECHO)
         flow_id.dport = icmph_p->un.echo.id;
@@ -853,24 +751,11 @@ int parse_icmpv6(struct xdp_md *ctx)
     int err, hdrsize, key=0;
     __u8 type;
     void *data, *data_end;
-    // struct meta_info *data_meta;
     struct icmp6hdr *icmp6h_p;
 
     /* init data pointers */
-    // data_meta	= (void*) (unsigned long)ctx->data_meta;
     data		= (void*) (unsigned long)ctx->data;
 	data_end	= (void*) (unsigned long)ctx->data_end;
-    
-    /* bounds check - data_meta */
-	// if ((void *)(data_meta + 1) > data){
-	// 	#ifdef __DEBUG__
-	// 	bpf_printk("---BPF DEBUG--- ERROR: Bounds check failed - data_meta + 1 > data\n");
-	// 	#endif
-	// 	return DEFAULT_XDP_FAIL_ACTION;
-	// }
-
-    /* offset */
-    // offset = data_meta->hdr_crsr_offset;
 
     /* check that offset is not too big (to avoid trouble with the verifier) */
     if (offset_l4 > MAX_OFFSET_ETHERNET)
@@ -887,15 +772,7 @@ int parse_icmpv6(struct xdp_md *ctx)
         return DEFAULT_XDP_FAIL_ACTION;
 	}
 
-    /* set meta data */
-    // data_meta->hdr_crsr_offset = offset + sizeof(struct icmp6hdr);    //end of icmp6 packet
-    // data_meta->payload_offset = offset + sizeof(struct icmp6hdr);
-    // #ifdef __VERBOSE__
-    // bpf_printk("---BPF DEBUG--- INFO: offset = %d\n", data_meta->hdr_crsr_offset);
-    // #endif
-
     /**********HEADER PARSING**********/
-    // icmp6h = *icmp6h_p;
     //TODO maybe not suitable for flow monitoring 
     if (icmp6h_p->icmp6_type == ICMPV6_ECHO_REPLY || icmp6h_p->icmp6_type == ICMPV6_ECHO_REQUEST)
         flow_id.dport = icmp6h_p->icmp6_dataun.u_echo.identifier;
@@ -1101,7 +978,6 @@ static __always_inline void ip6_update_stats(struct ipv6hdr *ip6h, struct flow_i
 /* tcp options parser */
 //copied from tc_flowmon
 //got paranoid of verifier complains about invalid map access and variable stack access, so some if statements could optimized away
-//TODO not working, not sure why but verifier complains about invalid map value access
 #ifdef __FLOW_TCP_OPTS__
 static __always_inline int parse_tcpopt(struct tcphdr *tcph, __u8 opt_wrds[MAX_OPTS], struct optvalues value)
 {
@@ -1546,42 +1422,34 @@ int flow_id_finish(struct xdp_md *ctx)
     #endif
 
     int key=0, i, ret;
-    // __u8 ip_version;    //to init the flow_info.version field without the need to write to it for every packet
-    bool fail = false, valid_flow_id;
-    // struct flow_id flow_id = { 0 };
+    // bool valid_flow_id;
     struct flow_info *flow_info_p;
     int action = DEFAULT_XDP_ACTION;
 
     /* get flow_stats from map */
     flow_info_p = bpf_map_lookup_elem(&flow_stats, &flow_id);
 
-        // flow_id.saddr.v4 == 0 ||
-        // flow_id.daddr.v4 == 0 ||
     /* check if flow_id is valid */ //this check can fail if attached to loopback device
-    if(!flow_info_p) {
-        valid_flow_id = false;
-        if( flow_id.proto != 0 ||
-            flow_id.sport != 0 ||
-            flow_id.dport != 0 )
-        {
-            for(i=0; i<16; i++)
-                if(flow_id.saddr.v6[i] != 0 || flow_id.daddr.v6[i] != 0) {
-                    valid_flow_id = true;
-                    break;
-                }
-        }
-    }
+    // if(!flow_info_p) {
+    //     valid_flow_id = false;
+    //     if( flow_id.proto != 0 ||
+    //         flow_id.sport != 0 ||
+    //         flow_id.dport != 0 )
+    //     {
+    //         for(i=0; i<16; i++)
+    //             if(flow_id.saddr.v6[i] != 0 || flow_id.daddr.v6[i] != 0) {
+    //                 valid_flow_id = true;
+    //                 break;
+    //             }
+    //     }
+    // }
 
     /* init flow_info if not loaded from map */
     struct flow_info info = {0};
-    if(!flow_info_p && valid_flow_id) {
+    if(!flow_info_p /*&& valid_flow_id*/) {
         /* fixed flow values */
         info.all_options_parsed = 1;
         info.pkts = 0;
-        // if (ip_version == 4)
-        //     info.version       = iph.version;
-        // else if (ip_version == 6)
-        //     info.version       = ip6h.version;
         
         /* min flow values. */
         info.min_pkt_len   = 0xffff;
@@ -1595,7 +1463,8 @@ int flow_id_finish(struct xdp_md *ctx)
         // #ifdef __DEBUG__
         // bpf_printk("---BPF DEBUG--- ERROR: no value for flow_info\n");
         // #endif
-        bpf_tail_call(ctx, &jmp_table, EXIT);
+        // bpf_tail_call(ctx, &jmp_table, EXIT);
+        pkts++;
         return DEFAULT_XDP_FAIL_ACTION;
     }
 
@@ -1612,9 +1481,6 @@ int flow_id_finish(struct xdp_md *ctx)
     return action;
 }
 
-
-__u32 pkts = 0;
-__u32 err_pkts = 0;
 
 PROG(FLOW_INFO_FINISH)
 int flow_info_finish(struct xdp_md *ctx)
@@ -1656,32 +1522,8 @@ int exit_prog(struct xdp_md *ctx)
     #ifdef __VERBOSE__
     bpf_printk("---BPF DEBUG--- INFO: EXIT\n");
     #endif
-    pkts++;
-    //to count all pkts arrived, gather them under flow_id 0
-    // struct flow_id key = { 0 };
-    // struct flow_info *value_p;
-    // struct flow_info value = {0};
-    // int err;
 
-    // value_p = bpf_map_lookup_elem(&flow_stats, &key);
-    
-    // if(!value_p)
-    //     value_p = &value;
-    
-    /* init value */
-    // if(!value_p) {
-    //     #ifdef __DEBUG__
-    //     bpf_printk("---BPF DEBUG--- ERROR: failed to lookup stats in exit prog\n");
-    //     #endif
-    //     return DEFAULT_XDP_FAIL_ACTION;
-    // }
-        
-    // value_p->pkts++;
-    // err = bpf_map_update_elem(&flow_stats, &key, value_p, BPF_ANY);
-    // if (err)
-    //     #ifdef __DEBUG__
-    //     bpf_printk("---BPF DEBUG--- ERROR: map update failed: flow_stats\n");
-    //     #endif
+    pkts++;
 
     #ifdef __VERBOSE__
     bpf_printk("---------------------e-n-d-e---------------------\n\n");
