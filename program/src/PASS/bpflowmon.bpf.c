@@ -1,9 +1,3 @@
-/*
-find and replace data_meta:
-(^.*)(data_meta)
-// $1
-*/
-
 //#include "vmlinux.h"          //all kernel types
 #include "bpflowmon.h"          //includes also vmlinux.h
 #include <bpf/bpf_helpers.h>
