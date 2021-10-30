@@ -15,13 +15,18 @@ char LICENSE[] SEC("license") = "GPL";
     #define memcpy(dest, src, n)   __builtin_memcpy((dest), (src), (n))
 #endif
 
-// #define __DEBUG__
-// #define __VERBOSE__
+#define __DEBUG__
+#define __VERBOSE__
 // #define __FLOW_TCP_OPTS__
 // #define __PERFORM_DPI__
 
 /************************************************************************************************************************/
 /* global variables */
+/* read only */
+const volatile int redirect_interface;
+const volatile char dest_mac[6];
+
+/* mutable */
 int action;
 __u64 ts;
 __u16 proto_l3;
@@ -172,11 +177,15 @@ int bpflowmon(struct xdp_md *ctx)
     flow_id = id;
 
     /* tail call first parser */
-    bpf_tail_call(ctx, &jmp_table, FIRST_PARSER);   //@TODO use map / global variable to set first_parser from user space to allow other l2 protocols
-    bpf_tail_call(ctx, &jmp_table, EXIT);
+    bpf_tail_call(ctx, &jmp_table, FIRST_PARSER);
 
     #ifdef __DEBUG__
     bpf_printk("---BPF DEBUG--- ERROR: Tail call failed: FIRST_PARSER\n\n");
+    #endif   
+
+    bpf_tail_call(ctx, &jmp_table, EXIT);
+    #ifdef __DEBUG__
+    bpf_printk("---BPF DEBUG--- ERROR: Tail call failed: EXIT\n\n");
     #endif   
     #ifdef __VERBOSE__
     bpf_printk("---------------------e-n-d-e---------------------\n\n");
@@ -276,26 +285,26 @@ int parse_ethhdr(struct xdp_md *ctx)
     #endif
 
     /* set MAC address (change dest and src) */
-    macbuf[0] = eth->h_dest[0];
-    macbuf[1] = eth->h_dest[1];
-    macbuf[2] = eth->h_dest[2];
-    macbuf[3] = eth->h_dest[3];
-    macbuf[4] = eth->h_dest[4];
-    macbuf[5] = eth->h_dest[5];
+    // macbuf[0] = eth->h_dest[0];
+    // macbuf[1] = eth->h_dest[1];
+    // macbuf[2] = eth->h_dest[2];
+    // macbuf[3] = eth->h_dest[3];
+    // macbuf[4] = eth->h_dest[4];
+    // macbuf[5] = eth->h_dest[5];
 
-    eth->h_dest[0] = eth->h_source[0];
-    eth->h_dest[1] = eth->h_source[1];
-    eth->h_dest[2] = eth->h_source[2];
-    eth->h_dest[3] = eth->h_source[3];
-    eth->h_dest[4] = eth->h_source[4];
-    eth->h_dest[5] = eth->h_source[5];
+    // eth->h_dest[0] = eth->h_source[0];
+    // eth->h_dest[1] = eth->h_source[1];
+    // eth->h_dest[2] = eth->h_source[2];
+    // eth->h_dest[3] = eth->h_source[3];
+    // eth->h_dest[4] = eth->h_source[4];
+    // eth->h_dest[5] = eth->h_source[5];
 
-    eth->h_source[0] = macbuf[0];
-    eth->h_source[1] = macbuf[1];
-    eth->h_source[2] = macbuf[2];
-    eth->h_source[3] = macbuf[3];
-    eth->h_source[4] = macbuf[4];
-    eth->h_source[5] = macbuf[5];
+    // eth->h_source[0] = macbuf[0];
+    // eth->h_source[1] = macbuf[1];
+    // eth->h_source[2] = macbuf[2];
+    // eth->h_source[3] = macbuf[3];
+    // eth->h_source[4] = macbuf[4];
+    // eth->h_source[5] = macbuf[5];
 
     proto_l3 = proto;
 

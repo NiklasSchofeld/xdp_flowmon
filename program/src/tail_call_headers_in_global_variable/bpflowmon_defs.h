@@ -5,9 +5,9 @@
 #define MAX_OFFSET_ETHERNET      30000          //verifier rejects data + offset if offset can be > (2^16)-1
 
 /* default action */
-#define DEFAULT_XDP_ACTION 			            bpf_redirect(6,NULL);//4 //pass
-#define DEFAULT_XDP_FAIL_ACTION		            bpf_redirect(6,NULL);//4 //aborted
-#define DEFAULT_XDP_PROTO_NOT_SUPPORTED_ACTION  bpf_redirect(6,NULL);//4 //pass
+#define DEFAULT_XDP_ACTION 			            XDP_PASS;//bpf_redirect(6,NULL);//4 //pass
+#define DEFAULT_XDP_FAIL_ACTION		            XDP_PASS;//bpf_redirect(6,NULL);//4 //aborted
+#define DEFAULT_XDP_PROTO_NOT_SUPPORTED_ACTION  XDP_PASS;//bpf_redirect(6,NULL);//4 //pass
 
 /* application limits */
 #define MAX_PROGS       32
@@ -47,7 +47,7 @@
 
 
 /* layer 2 protocol */
-#define FIRST_PARSER ETHERNET
+#define FIRST_PARSER 2
 
 
 /* TCP options */

@@ -64,6 +64,7 @@ struct {
 PROG(START_PROGRAM)
 int bpflowmon(struct xdp_md *ctx)
 {
+    int action = XDP_DROP;
     // ts = bpf_ktime_get_ns();
 
     // proto_l3 = 0;   //init with 0 to avoid conflicts with assignments of previous program runs
@@ -94,5 +95,5 @@ int bpflowmon(struct xdp_md *ctx)
     bpf_map_update_elem(&pkts_map, &key, pakete, BPF_ANY);
     
     // return action;
-    return XDP_PASS;
+    return action;
 }

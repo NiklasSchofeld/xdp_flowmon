@@ -429,7 +429,7 @@ static void flow_merge(const struct flow_id *key, const struct flow_info *value,
 
 static int flow_scan(int fd, int op, struct flow_counters *cnt, FILE *out)
 {
-	struct flow_id key, key2, prev_key /*={ 0 }*/;	//0 init key is not necessary and can cause problems when 0 flow_id is used 
+	struct flow_id key, key2, prev_key ={ 0 };
 	struct flow_info value = { 0 }, value2 = { 0 };
 	unsigned int bidirectional = 0;
 	
@@ -443,11 +443,11 @@ static int flow_scan(int fd, int op, struct flow_counters *cnt, FILE *out)
 		if ((bpf_map_lookup_elem(fd, &key, &value)) != 0) {
 			fprintf(stderr,
 				"ERR: bpf_map_lookup_elem failed key3:0x%p\n", &key);
-				fprintf(stderr, "ERR: key.saddr: \n", key.saddr);
-				fprintf(stderr, "ERR: key.daddr: \n", key.daddr);
-				fprintf(stderr, "ERR: key.sport: \n", key.sport);
-				fprintf(stderr, "ERR: key.dport: \n", key.dport);
-				fprintf(stderr, "ERR: key.proto: \n", key.proto);
+				// fprintf(stderr, "ERR: key.saddr: %d\n", key.saddr.v4);
+				// fprintf(stderr, "ERR: key.daddr: %d\n", key.daddr.v4);
+				// fprintf(stderr, "ERR: key.sport: %d\n", key.sport);
+				// fprintf(stderr, "ERR: key.dport: %d\n", key.dport);
+				// fprintf(stderr, "ERR: key.proto: %d\n", key.proto);
 			return -1; /* Maybe we could just go on with other keys... TODO */
 		}
 		cnt->tot++;

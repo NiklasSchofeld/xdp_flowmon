@@ -37,6 +37,7 @@ static const struct option long_options[] = {
 	{"help",		no_argument,		NULL, 'h'},
 	{"dev",			required_argument,	NULL, 'd'},
 	{"protocols",	required_argument,	NULL, 'p'},		//comma seperated values or multiple -p
+	{"first-parser",required_argument,	NULL, 'P'},
 	{"mode",		required_argument,	NULL, 'm'},		//xdp mode (generic or native)
 	{"DPI",			no_argument,		NULL, 'D'},		//decide if dpi should be performed
 	{"Output",		required_argument,	NULL, 'O'},		//diretory where to save dumped flows (default: current dir)
@@ -61,7 +62,8 @@ static const struct option_description optdesc[] = {
 	{{"quiet",		no_argument,		NULL, 'q'},	false,	"get no intormation [default: verbose]"},
 	{{"help",		no_argument,		NULL, 'h'},	false,	"print help"},
 	{{"dev",		required_argument,	NULL, 'd'},	true,	"<interface>: network devices/interfaces where the XDP BPF program is to be attached. Comma separated values"},
-	{{"protocols",	required_argument,	NULL, 'p'}, false,	"<proto>: protocols to be parsed. Comma separated values"},		//comma seperated values or multiple -p
+	{{"protocols",	required_argument,	NULL, 'p'}, false,	"<proto>: protocols to be parsed. Comma separated values [default: alls]"},		//comma seperated values or multiple -p
+	{{"first-parser",required_argument,	NULL, 'P'},false,	"<proto>: first protocol to be parsed for each packet. Comma separated values [default: ethernet]"},
 	{{"mode",		required_argument,	NULL, 'm'},	false,	"<xdp-flag>: mode for each interface. Comma separated values in same order as devices [default=skb/generic]"},		//xdp mode (generic or native)
 	{{"DPI",		no_argument,		NULL, 'D'},	false,	"decide if deep packet inspection should be performed"},
 	{{"Output",		required_argument,	NULL, 'O'},	false,	"<dir>: directory where to save dumped flows. [default to current dir]"},	//diretory where to save dumped flows (default: current dir)
@@ -93,6 +95,7 @@ struct params {
 	int interval;
 	int test;
 	bool test_run;
+	char first_parser[32];
 };
 
 /* set defaults for cfg */
@@ -118,6 +121,7 @@ void init_cfg(struct params *cfg)
 	strcpy(cfg->log_output_path, "");			//stdout
 	cfg->json = false;
 	cfg->test_run = false;
+	strcpy(cfg->first_parser, "ethernet");
 }
 
 /******************************************************************************************/
@@ -199,12 +203,45 @@ static void bump_memlock_rlimit(void)
 	}
 }
 
+/* returns internal protocol id from protocol string. -1 if string unknown */
+int get_internal_protocol_id(char *proto)
+{
+	if (strcmp("TCP", proto) == 0 || strcmp("tcp", proto) == 0) {
+		//TCP
+		return TCP;
+	} else if (strcmp("UDP", proto) == 0 || strcmp("udp", proto) == 0) {
+		//UDP
+		return UDP;
+	} else if (strcmp("ICMP", proto) == 0 || strcmp("icmp", proto) == 0 || strcmp("ICMPv4", proto) == 0 || strcmp("icmpv4", proto) == 0 || strcmp("ICMPV4", proto) == 0 || strcmp("icmp4", proto) == 0 || strcmp("ICMP4", proto) == 0 ) {
+		//ICMP
+		return ICMP;
+	} else if (strcmp("ICMPv6", proto) == 0 || strcmp("ICMPV6", proto) == 0 || strcmp("icmpv6", proto) == 0 || strcmp("ICMP6", proto) == 0 || strcmp("icmp6", proto) == 0) {
+		//ICMPv6
+		return ICMPV6;
+	} else if (	strcmp("IP", proto) == 0 || strcmp("ip", proto) == 0 || strcmp("IPv4", proto) == 0 || strcmp("ipv4", proto) == 0 || strcmp("IPV4", proto) == 0 || strcmp("IP4", proto) == 0 || strcmp("ip4", proto) == 0) {
+		//IP
+		return IP;
+	} else if (strcmp("IPv6", proto) == 0 || strcmp("IPV6", proto) == 0 || strcmp("ipv6", proto) == 0 || strcmp("IP6", proto) == 0 || strcmp("ip6", proto) == 0) {
+		//IPv6
+		return IPV6;
+	} else if (strcmp("ethernet", proto) == 0 || strcmp("eth", proto) == 0 || strcmp("ETHERNET", proto) == 0 || strcmp("ETH", proto) == 0) {
+		//ETHERNET
+		return ETHERNET;
+	} else if (strcmp("DNS", proto) == 0 || strcmp("dns", proto) == 0) {
+		return DNS;
+	} else {
+		return -1;
+	}
+}
+
 /* Initialize jmp_table by placing all programs at related key */
 int init_jmp_table(struct bpf_object *obj, struct params *cfg, int *main_prog_fd)
 {
     int prog_fd, jmp_table_fd, key, err;
     struct bpf_program *prog;
     const char *section;
+
+	int first_parser_id = get_internal_protocol_id(cfg->first_parser);
     
 	cfg->protocols[FLOW_ID_FINISH] = true;		//must always be used in jump table
 	cfg->protocols[EXIT] = true;				//must always be used in jump table
@@ -228,15 +265,24 @@ int init_jmp_table(struct bpf_object *obj, struct params *cfg, int *main_prog_fd
 			return EXIT_FAIL;
 		}
 
+
         if (key == START_PROGRAM) {
             *main_prog_fd = prog_fd;		//will be attached to hookpoint
         }
         else {
-			if (cfg->protocols[key]) {
-				err = bpf_map_update_elem(jmp_table_fd, &key, &prog_fd, BPF_ANY);
+			if (cfg->protocols[key] || key == first_parser_id) {
+				err = bpf_map_update_elem(jmp_table_fd, &key, &prog_fd, BPF_ANY);	//add proto and use its internal id as position
 				if (err) {
 					fprintf(stderr, "ERROR: adding program to jmp_table failed: err(%d)\n", err);
 					return err;
+				}
+				if (key == first_parser_id) {	//add protocol also as first parser
+					key = FIRST_PARSER;
+					err = bpf_map_update_elem(jmp_table_fd, &key, &prog_fd, BPF_ANY);
+					if (err) {
+						fprintf(stderr, "ERROR: adding first parser to jmp_table failed: err(%d)\n", err);
+						return err;
+					}
 				}
 			}
         }
@@ -422,6 +468,13 @@ void parse_args(int argc, char **argv, const struct option long_options[], struc
 					goto error;
 				}
 				break;
+			case 'P':
+				if (get_internal_protocol_id(optarg) == -1){
+					fprintf(stderr, "ERROR: --first-parser protocol unknown: %s\n", optarg);
+					goto error;
+				}
+				strcpy(cfg->first_parser, optarg);
+				break;
 			case 'D':
 				cfg->deep_packet_inspection = true;
 				cfg->protocols[DEEP_PACKET_INSPECTION] = true;
@@ -575,12 +628,13 @@ int main(int argc, char **argv)
 		strcpy(map_path, cfg.map_folder_path);
 		strcat(map_path, bpf_map__name(map));
 		if((cfg.map_reuse && strcmp(bpf_map__name(map), "flow_stats") == 0) ||	//skip flow_stats map when reusing
-			strcmp(bpf_map__name(map), bpf_map__name(skel->maps.bss)) == 0)		//skip bss for global variables always
+			strcmp(bpf_map__name(map), bpf_map__name(skel->maps.bss)) == 0	||	//skip bss for global variables always
+			strcmp(bpf_map__name(map), bpf_map__name(skel->maps.rodata)) == 0)	//skip rodata	
 		;	//skip flow_stats map if it is reused	//skip global variables (bss)
 		else 
 		{	/* unpin existing map */
-			bpf_map__unpin(map, map_path);
-			if (err && err != -2) {	//ENOENT = no maps found to unpin, that's ok. Above code would check if at least one map is present. I found no shorter solution for that
+			err = bpf_map__unpin(map, map_path);
+			if (err && err != -2) {	//ENOENT = no maps found to unpin, that's ok. Above code would check if at least one map is present.
 				fprintf(stderr, "ERROR: can't unpin/unlink maps: err(%d)\n", err);
 				goto cleanup;
 			}
@@ -617,13 +671,17 @@ int main(int argc, char **argv)
 			fprintf(stderr, "ERROR: No interface set\n");
 			goto cleanup;
 		}
-	printf("Successfully started! Please run `sudo cat /sys/kernel/debug/tracing/trace_pipe` "
-	       "to see output of the BPF programs.\n");
+		printf("Successfully started!\n");
+		// #ifdef __DEBUG__ || __VERBOSE__
+		// printf(Run `sudo cat /sys/kernel/debug/tracing/trace_pipe` to see bpf program output);
+		// #endif
+
+		flow_poll(map_fd, cfg.interval, cfg.log_output_path, cfg.dump_output_path, cfg.json);
 	}
 	
 	
 	/* setup test */
-	if (cfg.test == 0) {
+	if (cfg.test != NULL && cfg.test == 0) {
 		struct ipv4_packet pkt_v4 = {
 			.eth.h_proto = __bpf_constant_htons(ETH_P_IP),
 			
@@ -668,7 +726,7 @@ int main(int argc, char **argv)
 
 
 	__u32 pkts=0;
-	if (cfg.test > 0) {
+	if (cfg.test != NULL && cfg.test > 0) {
 		/* wait duration */
 		for (i=0; i<cfg.test; i++) {
 			sleep(1);
@@ -701,8 +759,6 @@ int main(int argc, char **argv)
 		bpflowmon_bpf__destroy(skel);
 		exit(0);
 	}
-	else
-		flow_poll(map_fd, cfg.interval, cfg.log_output_path, cfg.dump_output_path, cfg.json);
 
 	
 
