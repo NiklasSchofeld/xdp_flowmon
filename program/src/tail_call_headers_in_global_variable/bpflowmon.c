@@ -26,6 +26,9 @@
 #include "bpflowmon.skel.h"
 
 
+#define MAX_INTERFACES 8
+#define MAX_PATHLEN 512
+
 int verbose = 1;
 static const char *default_map_filename = "/sys/fs/bpf/xdp/globals/flow_stats";
 static const char *default_map_basedir = "/sys/fs/bpf/xdp/globals/";
@@ -35,16 +38,17 @@ static const struct option long_options[] = {
 	{"verbose", 	no_argument,		NULL, 'v'},
 	{"quiet",		no_argument,		NULL, 'q'},
 	{"help",		no_argument,		NULL, 'h'},
-	{"dev",			required_argument,	NULL, 'd'},
+	{"interface",	required_argument,	NULL, 'i'},
 	{"protocols",	required_argument,	NULL, 'p'},		//comma seperated values or multiple -p
 	{"first-parser",required_argument,	NULL, 'P'},
 	{"mode",		required_argument,	NULL, 'm'},		//xdp mode (generic or native)
 	{"DPI",			no_argument,		NULL, 'D'},		//decide if dpi should be performed
+	{"dest-mac",	required_argument,	NULL, 'd'},
 	{"Output",		required_argument,	NULL, 'O'},		//diretory where to save dumped flows (default: current dir)
 	{"Log",			required_argument,	NULL, 'L'},
 	{"Map",			required_argument,	NULL, 'M'},		//path to Map
 	{"Folder",		required_argument,	NULL, 'F'},		//map folder
-	{"interval",	required_argument,	NULL, 'i'},
+	{"Interval",	required_argument,	NULL, 'I'},
 	{"json",		no_argument,		NULL, 'j'},
 	{"test",		required_argument,	NULL, 't'},
 	{0, 0, 0, 0}
@@ -61,23 +65,22 @@ static const struct option_description optdesc[] = {
 	{{"verbose", 	no_argument,		NULL, 'v'},	false,	"get information about flow counts [default: verbose]"},
 	{{"quiet",		no_argument,		NULL, 'q'},	false,	"get no intormation [default: verbose]"},
 	{{"help",		no_argument,		NULL, 'h'},	false,	"print help"},
-	{{"dev",		required_argument,	NULL, 'd'},	true,	"<interface>: network devices/interfaces where the XDP BPF program is to be attached. Comma separated values"},
+	{{"interface",	required_argument,	NULL, 'i'},	true,	"<interface>: network devices/interfaces where the XDP BPF program is to be attached. Comma separated values"},
 	{{"protocols",	required_argument,	NULL, 'p'}, false,	"<proto>: protocols to be parsed. Comma separated values [default: alls]"},		//comma seperated values or multiple -p
 	{{"first-parser",required_argument,	NULL, 'P'},false,	"<proto>: first protocol to be parsed for each packet. Comma separated values [default: ethernet]"},
-	{{"mode",		required_argument,	NULL, 'm'},	false,	"<xdp-flag>: mode for each interface. Comma separated values in same order as devices [default=skb/generic]"},		//xdp mode (generic or native)
+	{{"mode",		required_argument,	NULL, 'm'},	false,	"<xdp-flag>: mode for each interface. Comma separated values in same order as devices [default=driver/native]"},		//xdp mode (generic, native or hardware)
+	{{"dest-mac",	required_argument,	NULL, 'd'}, true, "<MAC>: mac address of destination where packets are redirected to (HEX seperated by :)"},
 	{{"DPI",		no_argument,		NULL, 'D'},	false,	"decide if deep packet inspection should be performed"},
 	{{"Output",		required_argument,	NULL, 'O'},	false,	"<dir>: directory where to save dumped flows. [default to current dir]"},	//diretory where to save dumped flows (default: current dir)
 	{{"Log",		required_argument,	NULL, 'L'},	false,	"<file>: log messages to file [default: stdout]"},
 	{{"Map",		required_argument,	NULL, 'M'},	false,	"<file>: map for flow_stats that is to be reused (full path) [default: /sys/fs/bpf/xdp/globals/flow_stats"},	//path to Map
 	{{"Folder",		required_argument,	NULL, 'F'},	false,	"<dir>:	Folder where the maps are to be saved (full path) [default: /sys/fs/bpf/xdp/globals/"},		//map folder
-	{{"interval",	required_argument,	NULL, 'i'}, false,	"<interval>: reporting period in sec [default=1s; 0=print once and exit]"},
+	{{"Interval",	required_argument,	NULL, 'I'}, false,	"<interval>: reporting period in sec [default=1s; 0=print once and exit]"},
 	{{"json",		no_argument,		NULL, 'j'},	false,	"encode flow info as json"},
 	{{"test",		required_argument,	NULL, 't'},	false,	"<duration> dont start flow management and print pkt count after duration and detach xdp program"},
 	{{0, 0, 0, 0}, 0}
 };
 
-#define MAX_INTERFACES 8
-#define MAX_PATHLEN 512
 /* parsed parameters */
 struct params {
 	int verbose;
@@ -96,6 +99,7 @@ struct params {
 	int test;
 	bool test_run;
 	char first_parser[32];
+	unsigned char dest_mac[6];
 };
 
 /* set defaults for cfg */
@@ -106,7 +110,7 @@ void init_cfg(struct params *cfg)
 	cfg->verbose = verbose;
 	for(i=0; i<MAX_INTERFACES; i++){
 		cfg->interfaces[i] = 0;						//invalid interface
-		cfg->xdp_mode[i] = XDP_FLAGS_SKB_MODE;		//generic mode
+		cfg->xdp_mode[i] = XDP_FLAGS_DRV_MODE;		//generic mode
 	}
 	for(i=0; i<MAX_PROGS; i++) {
 		cfg->protocols[i] = true;
@@ -122,6 +126,7 @@ void init_cfg(struct params *cfg)
 	cfg->json = false;
 	cfg->test_run = false;
 	strcpy(cfg->first_parser, "ethernet");
+	// strcpy(cfg->dest_mac, "");
 }
 
 /******************************************************************************************/
@@ -294,7 +299,10 @@ int init_jmp_table(struct bpf_object *obj, struct params *cfg, int *main_prog_fd
 /* print one option with description */
 void print_option(struct option_description *optdesc)
 {
-	printf("\t-%c\t", optdesc->option.val);
+	if (optdesc->option.val < 1000)
+		printf("\t-%c\t", optdesc->option.val);
+	else
+		printf("\t\t");
 	printf("%s%-20s", "--", optdesc->option.name);
 	printf("%s\n", optdesc->description);
 }
@@ -406,6 +414,7 @@ void parse_args(int argc, char **argv, const struct option long_options[], struc
 	char shortopts[256] = {0};
 	int ifcnt = 0, modecnt = 0;	//interface count
 	char *proto;
+	int i = 0;
 
 	compose_short_opts(shortopts, long_options, NULL);
 	while ((opt = getopt_long(argc, argv, shortopts, long_options, &longindex)) != -1)
@@ -420,7 +429,7 @@ void parse_args(int argc, char **argv, const struct option long_options[], struc
 				cfg->verbose = 0;
 				verbose = 0;
 				break;
-			case 'd':	//interface/device
+			case 'i':	//interface/device
 				optarg = strtok(optarg, ",");
 				while (optarg != NULL)
 				{
@@ -435,6 +444,20 @@ void parse_args(int argc, char **argv, const struct option long_options[], struc
 					}
 					ifcnt++;
 					optarg = strtok(NULL, ",");
+				}
+				break;
+			case 'd':	//dest mac
+				optarg = strtok(optarg, ":");
+				i = 0;
+				while (optarg != NULL && i<6)
+				{
+					cfg->dest_mac[i] = (unsigned char) strtol(optarg, NULL, 16);	//convert string from cli to hex
+					++i;
+					optarg = strtok(NULL, ":");
+				}
+				if (i<6) {
+					fprintf(stderr, "ERROR: --dest-mac is to short\n");
+					goto error;
 				}
 				break;
 			case 'm':	//xdp flags
@@ -512,7 +535,7 @@ void parse_args(int argc, char **argv, const struct option long_options[], struc
 			case 'j':
 				cfg->json = true;
 				break;
-			case 'i':
+			case 'I':
 				cfg->interval = atoi(optarg);
 				break;
 			case 'h':
@@ -524,37 +547,42 @@ void parse_args(int argc, char **argv, const struct option long_options[], struc
 				if ( 0 == atoi(optarg))
 					cfg->test_run = true;
 				break;
-			error:
 			default:
-				usage(optdesc);
-				exit(EXIT_FAIL_OPTION);
+				goto error;
 		}
+	}
+
+	if (strcmp(cfg->dest_mac, "") == 0) {
+		fprintf(stderr, "ERROR: no destination MAC set\n");
+		error:
+			usage(optdesc);
+			exit(EXIT_FAIL_OPTION);
 	}
 
 }
 
-__u32 count_pkts(int flow_stats_fd)
-{
-    struct flow_id key, prev_key;
-	struct flow_info value = { 0 };
-    __u32 pkts = 0;
+// __u32 count_pkts(int flow_stats_fd)
+// {
+//     struct flow_id key, prev_key = { 0 };
+// 	struct flow_info value = { 0 };
+//     __u32 pkts = 0;
     
-    while ( bpf_map_get_next_key(flow_stats_fd, &prev_key, &key) == 0 ) {
-        if ((bpf_map_lookup_elem(flow_stats_fd, &key, &value)) != 0) {
-            fprintf(stderr, "ERR: bpf_map_lookup_elem failed key3:0x%p\n", &key);
-			// fprintf(stderr, "ERR: key.saddr: \n", key.saddr);
-			// fprintf(stderr, "ERR: key.daddr: \n", key.daddr);
-			// fprintf(stderr, "ERR: key.sport: \n", key.sport);
-			// fprintf(stderr, "ERR: key.dport: \n", key.dport);
-			// fprintf(stderr, "ERR: key.proto: \n", key.proto);
-        }
-		else {
-        	pkts = pkts + value.pkts;
-			prev_key = key;
-		}
-    }
-	return pkts;
-}
+//     while ( bpf_map_get_next_key(flow_stats_fd, &prev_key, &key) == 0 ) {
+//         if ((bpf_map_lookup_elem(flow_stats_fd, &key, &value)) != 0) {
+//             fprintf(stderr, "ERR: bpf_map_lookup_elem failed key3:0x%p\n", &key);
+// 			// fprintf(stderr, "ERR: key.saddr: \n", key.saddr);
+// 			// fprintf(stderr, "ERR: key.daddr: \n", key.daddr);
+// 			// fprintf(stderr, "ERR: key.sport: \n", key.sport);
+// 			// fprintf(stderr, "ERR: key.dport: \n", key.dport);
+// 			// fprintf(stderr, "ERR: key.proto: \n", key.proto);
+//         }
+// 		else {
+//         	pkts = pkts + value.pkts;
+// 			prev_key = key;
+// 		}
+//     }
+// 	return pkts;
+// }
 
 #define MAGIC_BYTES 123
 
@@ -606,6 +634,11 @@ int main(int argc, char **argv)
 			fprintf(stderr, "ERROR: Failed to reuse map: err(%d)\n", err);
 			goto cleanup;
 		}
+	}
+
+	/* set global variables / rodata of bpf program (must be done before skel is loaded)*/
+	for (i=0; i < 6; ++i) {
+		skel->rodata->dest_mac[i] = cfg.dest_mac[i];
 	}
 
 	/* Load & verify BPF programs and maps */

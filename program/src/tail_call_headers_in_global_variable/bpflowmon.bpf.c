@@ -24,9 +24,9 @@ char LICENSE[] SEC("license") = "GPL";
 /* global variables */
 /* read only */
 const volatile int redirect_interface;
-const volatile char dest_mac[6];
+const volatile unsigned char dest_mac[6];//{0,0,0,0,0,0};
 
-/* mutable */
+/* bss / mutable */
 int action;
 __u64 ts;
 __u16 proto_l3;
@@ -220,7 +220,7 @@ int parse_ethhdr(struct xdp_md *ctx)
     __u16 proto;
     struct ethhdr *eth;
     struct vlan_hdr *vlh;
-    unsigned char macbuf[6];
+    // unsigned char macbuf[6];
 
     #ifdef __VERBOSE__
     char src[7], dst[7];
@@ -283,6 +283,14 @@ int parse_ethhdr(struct xdp_md *ctx)
     for (int i =0; i<6; i++)
         bpf_printk("%x\n", dst[i] & 0xff);
     #endif
+
+    /* set MAC address */
+    eth->h_dest[0] = dest_mac[0];
+    eth->h_dest[1] = dest_mac[1];
+    eth->h_dest[2] = dest_mac[2];
+    eth->h_dest[3] = dest_mac[3];
+    eth->h_dest[4] = dest_mac[4];
+    eth->h_dest[5] = dest_mac[5];
 
     /* set MAC address (change dest and src) */
     // macbuf[0] = eth->h_dest[0];
