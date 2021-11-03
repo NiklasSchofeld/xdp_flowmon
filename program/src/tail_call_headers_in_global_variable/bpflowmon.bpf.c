@@ -15,16 +15,17 @@ char LICENSE[] SEC("license") = "GPL";
     #define memcpy(dest, src, n)   __builtin_memcpy((dest), (src), (n))
 #endif
 
-#define __DEBUG__
-#define __VERBOSE__
+// #define __DEBUG__
+// #define __VERBOSE__
 // #define __FLOW_TCP_OPTS__
 // #define __PERFORM_DPI__
 
 /************************************************************************************************************************/
 /* global variables */
 /* read only */
-const volatile int redirect_interface;
-const volatile unsigned char dest_mac[6];//{0,0,0,0,0,0};
+// const int redirect_interface;
+const unsigned char dest_mac[6];
+// const volatile int default_action;
 
 /* bss / mutable */
 int action;
@@ -39,8 +40,8 @@ struct flow_id flow_id;
 struct flow_info flow_info;
 struct tcp_options_words tcp_opts;
 
-__u32 pkts = 0;
-__u32 err_pkts = 0;
+// __u32 pkts = 0;
+// __u32 err_pkts = 0;
 /************************************************************************************************************************/
 /* structs */
 
@@ -285,34 +286,19 @@ int parse_ethhdr(struct xdp_md *ctx)
     #endif
 
     /* set MAC address */
+    eth->h_source[0] = eth->h_dest[0];
+    eth->h_source[1] = eth->h_dest[1];
+    eth->h_source[2] = eth->h_dest[2];
+    eth->h_source[3] = eth->h_dest[3];
+    eth->h_source[4] = eth->h_dest[4];
+    eth->h_source[5] = eth->h_dest[5];
+
     eth->h_dest[0] = dest_mac[0];
     eth->h_dest[1] = dest_mac[1];
     eth->h_dest[2] = dest_mac[2];
     eth->h_dest[3] = dest_mac[3];
     eth->h_dest[4] = dest_mac[4];
     eth->h_dest[5] = dest_mac[5];
-
-    /* set MAC address (change dest and src) */
-    // macbuf[0] = eth->h_dest[0];
-    // macbuf[1] = eth->h_dest[1];
-    // macbuf[2] = eth->h_dest[2];
-    // macbuf[3] = eth->h_dest[3];
-    // macbuf[4] = eth->h_dest[4];
-    // macbuf[5] = eth->h_dest[5];
-
-    // eth->h_dest[0] = eth->h_source[0];
-    // eth->h_dest[1] = eth->h_source[1];
-    // eth->h_dest[2] = eth->h_source[2];
-    // eth->h_dest[3] = eth->h_source[3];
-    // eth->h_dest[4] = eth->h_source[4];
-    // eth->h_dest[5] = eth->h_source[5];
-
-    // eth->h_source[0] = macbuf[0];
-    // eth->h_source[1] = macbuf[1];
-    // eth->h_source[2] = macbuf[2];
-    // eth->h_source[3] = macbuf[3];
-    // eth->h_source[4] = macbuf[4];
-    // eth->h_source[5] = macbuf[5];
 
     proto_l3 = proto;
 
@@ -358,7 +344,7 @@ int parse_ip4(struct xdp_md *ctx)
 	data_end	= (void*) (unsigned long)ctx->data_end;
 
     /* check that offset is not too big (to avoid trouble with the verifier) */
-    if (offset_l3 > MAX_OFFSET_ETHERNET)
+    if (offset_l3 > MAX_OFFSET)
         return DEFAULT_XDP_FAIL_ACTION;
 
     /* header */
@@ -433,7 +419,7 @@ int parse_ip6(struct xdp_md *ctx)
 	data_end	= (void*) (unsigned long)ctx->data_end;
 
     /* check that offset is not too big (to avoid trouble with the verifier) */
-    if (offset_l4 > MAX_OFFSET_ETHERNET)
+    if (offset_l4 > MAX_OFFSET)
         return DEFAULT_XDP_FAIL_ACTION;
     
     /* header */
@@ -499,7 +485,7 @@ int parse_udp(struct xdp_md *ctx)
 	data_end	= (void*) (unsigned long)ctx->data_end;
 
     /* check that offset is not too big (to avoid trouble with the verifier) */
-    if (offset_l4 > MAX_OFFSET_ETHERNET)
+    if (offset_l4 > MAX_OFFSET)
         return DEFAULT_XDP_FAIL_ACTION;
     
     /* header */
@@ -560,7 +546,7 @@ int parse_tcp(struct xdp_md *ctx)
 	data_end	= (void*) (unsigned long)ctx->data_end;
 
     /* check that offset is not too big (to avoid trouble with the verifier) */
-    if (offset_l4 > MAX_OFFSET_ETHERNET)
+    if (offset_l4 > MAX_OFFSET)
         return DEFAULT_XDP_FAIL_ACTION;
     
     /* header */
@@ -720,7 +706,7 @@ int parse_icmp(struct xdp_md *ctx)
 	data_end	= (void*) (unsigned long)ctx->data_end;
 
     /* check that offset is not too big (to avoid trouble with the verifier) */
-    if (offset_l4 > MAX_OFFSET_ETHERNET)
+    if (offset_l4 > MAX_OFFSET)
         return DEFAULT_XDP_FAIL_ACTION;
     
     /* header */
@@ -775,7 +761,7 @@ int parse_icmpv6(struct xdp_md *ctx)
 	data_end	= (void*) (unsigned long)ctx->data_end;
 
     /* check that offset is not too big (to avoid trouble with the verifier) */
-    if (offset_l4 > MAX_OFFSET_ETHERNET)
+    if (offset_l4 > MAX_OFFSET)
         return DEFAULT_XDP_FAIL_ACTION;
     
     /* header */
@@ -1296,7 +1282,7 @@ int parse_ip_info(struct xdp_md *ctx)
 	data_end	= (void*) (unsigned long)ctx->data_end;
 
     /* check that offset is not too big (to avoid trouble with the verifier) */
-    if (offset_l3 > MAX_OFFSET_ETHERNET)
+    if (offset_l3 > MAX_OFFSET)
         return DEFAULT_XDP_FAIL_ACTION;
 
     /* header */
@@ -1346,7 +1332,7 @@ int parse_ipv6_info(struct xdp_md *ctx)
 	data_end	= (void*) (unsigned long)ctx->data_end;
 
     /* check that offset is not too big (to avoid trouble with the verifier) */
-    if (offset_l3 > MAX_OFFSET_ETHERNET)
+    if (offset_l3 > MAX_OFFSET)
         return DEFAULT_XDP_FAIL_ACTION;
 
     /* header */
@@ -1399,7 +1385,7 @@ int parse_tcp_info(struct xdp_md *ctx)
 	data_end	= (void*) (unsigned long)ctx->data_end;
 
     /* check that offset is not too big (to avoid trouble with the verifier) */
-    if (offset_l4 > MAX_OFFSET_ETHERNET)
+    if (offset_l4 > MAX_OFFSET)
         return DEFAULT_XDP_FAIL_ACTION;
 
     /* header */
@@ -1481,7 +1467,7 @@ int flow_id_finish(struct xdp_md *ctx)
         // bpf_printk("---BPF DEBUG--- ERROR: no value for flow_info\n");
         // #endif
         // bpf_tail_call(ctx, &jmp_table, EXIT);
-        pkts++;
+        // pkts++;
         return DEFAULT_XDP_FAIL_ACTION;
     }
 
@@ -1507,7 +1493,7 @@ int flow_info_finish(struct xdp_md *ctx)
     bpf_printk("---BPF DEBUG--- INFO: starting FLOW_INFO_FINISH\n");
     #endif
     int err;
-    pkts++;
+    // pkts++;
 
     update_frame_stats();
     //bpf_fib_lookup()      //TODO should be used for looking up next destination in routing table
@@ -1520,7 +1506,7 @@ int flow_info_finish(struct xdp_md *ctx)
         #ifdef __DEBUG__
         bpf_printk("---BPF DEBUG--- ERROR: map update failed: flow_stats: %d\n", err);
         #endif
-        err_pkts++;
+        // err_pkts++;
     }
 
     bpf_tail_call(ctx, &jmp_table, DEEP_PACKET_INSPECTION);
@@ -1540,7 +1526,7 @@ int exit_prog(struct xdp_md *ctx)
     bpf_printk("---BPF DEBUG--- INFO: EXIT\n");
     #endif
 
-    pkts++;
+    // pkts++;
 
     #ifdef __VERBOSE__
     bpf_printk("---------------------e-n-d-e---------------------\n\n");

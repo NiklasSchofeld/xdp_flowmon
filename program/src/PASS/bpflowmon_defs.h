@@ -16,6 +16,9 @@
 
 /* keys for jump table programs protocols */
 #define START_PROGRAM	0
+#define NEXT_PROG_MAP   30
+#define NEXT_PROG_GLOB  31
+
 #define EXIT        	1
 #define FALL_THROUGH    2
 #define DEEP_PACKET_INSPECTION 3

@@ -2,16 +2,16 @@
     #define BPFLOWMON_DEFS
 
 /* maximum offsets for addition with data pointer */
-#define MAX_OFFSET_ETHERNET      30000          //verifier rejects data + offset if offset can be > (2^16)-1
+#define MAX_OFFSET      30000          //verifier rejects data + offset if offset can be to big
 
 /* default action */
-#define DEFAULT_XDP_ACTION 			            XDP_PASS;//bpf_redirect(6,NULL);//4 //pass
-#define DEFAULT_XDP_FAIL_ACTION		            XDP_PASS;//bpf_redirect(6,NULL);//4 //aborted
-#define DEFAULT_XDP_PROTO_NOT_SUPPORTED_ACTION  XDP_PASS;//bpf_redirect(6,NULL);//4 //pass
+#define DEFAULT_XDP_ACTION 			            bpf_redirect(6,NULL);
+#define DEFAULT_XDP_FAIL_ACTION		            XDP_DROP;//bpf_redirect(6,NULL);
+#define DEFAULT_XDP_PROTO_NOT_SUPPORTED_ACTION  bpf_redirect(6,NULL);
 
 /* application limits */
 #define MAX_PROGS       32
-#define MAX_FLOWS       421000//65536//131072
+#define MAX_FLOWS       10000000//421000//65536//131072
 #define VLAN_MAX_DEPTH  20
 
 /* keys for jump table programs protocols */

@@ -206,17 +206,17 @@ int init_jmp_table(struct bpf_object *obj, struct params *cfg, int *main_prog_fd
     struct bpf_program *prog;
     const char *section;
     
-	cfg->protocols[FLOW_ID_FINISH] = true;		//must always be used in jump table
-	cfg->protocols[EXIT] = true;				//must always be used in jump table
-	cfg->protocols[FLOW_INFO_FINISH] = true;	//must always be used in jump table
+	// cfg->protocols[FLOW_ID_FINISH] = true;		//must always be used in jump table
+	// cfg->protocols[EXIT] = true;				//must always be used in jump table
+	// cfg->protocols[FLOW_INFO_FINISH] = true;	//must always be used in jump table
 	// if (cfg->restricted_protos)					//fall through only when certain protocols are set
 	// 	cfg->protocols[FALL_THROUGH] = true;
 	// else 
 	// 	cfg->protocols[FALL_THROUGH] = false;
-	if (cfg->deep_packet_inspection)
-		cfg->protocols[DEEP_PACKET_INSPECTION] = true;
-	else
-		cfg->protocols[DEEP_PACKET_INSPECTION] = false;
+	// if (cfg->deep_packet_inspection)
+	// 	cfg->protocols[DEEP_PACKET_INSPECTION] = true;
+	// else
+	// 	cfg->protocols[DEEP_PACKET_INSPECTION] = false;
 
     jmp_table_fd = bpf_object__find_map_fd_by_name(obj, "jmp_table");
     bpf_object__for_each_program(prog, obj) {

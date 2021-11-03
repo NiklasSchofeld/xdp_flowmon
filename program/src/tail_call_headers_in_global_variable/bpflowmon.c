@@ -26,7 +26,7 @@
 #include "bpflowmon.skel.h"
 
 
-#define MAX_INTERFACES 8
+#define MAX_INTERFACES 16
 #define MAX_PATHLEN 512
 
 int verbose = 1;
@@ -51,6 +51,7 @@ static const struct option long_options[] = {
 	{"Interval",	required_argument,	NULL, 'I'},
 	{"json",		no_argument,		NULL, 'j'},
 	{"test",		required_argument,	NULL, 't'},
+	{"user-space-flowmngmt", no_argument, NULL, 'u'},
 	{0, 0, 0, 0}
 };
 
@@ -78,6 +79,7 @@ static const struct option_description optdesc[] = {
 	{{"Interval",	required_argument,	NULL, 'I'}, false,	"<interval>: reporting period in sec [default=1s; 0=print once and exit]"},
 	{{"json",		no_argument,		NULL, 'j'},	false,	"encode flow info as json"},
 	{{"test",		required_argument,	NULL, 't'},	false,	"<duration> dont start flow management and print pkt count after duration and detach xdp program"},
+	{{"user-space-flowmngmt", no_argument, NULL, 'u'}, false, "when testing, also run the flow management component in user space. (can only be used with -t >0)"},
 	{{0, 0, 0, 0}, 0}
 };
 
@@ -100,6 +102,7 @@ struct params {
 	bool test_run;
 	char first_parser[32];
 	unsigned char dest_mac[6];
+	bool user_space_flowmngmt;
 };
 
 /* set defaults for cfg */
@@ -126,6 +129,8 @@ void init_cfg(struct params *cfg)
 	cfg->json = false;
 	cfg->test_run = false;
 	strcpy(cfg->first_parser, "ethernet");
+	cfg->test = -1;
+	cfg->user_space_flowmngmt = false;
 	// strcpy(cfg->dest_mac, "");
 }
 
@@ -415,6 +420,7 @@ void parse_args(int argc, char **argv, const struct option long_options[], struc
 	int ifcnt = 0, modecnt = 0;	//interface count
 	char *proto;
 	int i = 0;
+	bool dstmacset = false;
 
 	compose_short_opts(shortopts, long_options, NULL);
 	while ((opt = getopt_long(argc, argv, shortopts, long_options, &longindex)) != -1)
@@ -459,6 +465,7 @@ void parse_args(int argc, char **argv, const struct option long_options[], struc
 					fprintf(stderr, "ERROR: --dest-mac is to short\n");
 					goto error;
 				}
+				dstmacset = true;
 				break;
 			case 'm':	//xdp flags
 				optarg = strtok(optarg,",");
@@ -547,12 +554,15 @@ void parse_args(int argc, char **argv, const struct option long_options[], struc
 				if ( 0 == atoi(optarg))
 					cfg->test_run = true;
 				break;
+			case 'u':
+				cfg->user_space_flowmngmt = true;
+				break;
 			default:
 				goto error;
 		}
 	}
 
-	if (strcmp(cfg->dest_mac, "") == 0) {
+	if (!dstmacset) {
 		fprintf(stderr, "ERROR: no destination MAC set\n");
 		error:
 			usage(optdesc);
@@ -599,11 +609,12 @@ int main(int argc, char **argv)
     struct bpf_object *obj;
 	struct params cfg = {0};
 	char map_path[MAX_PATHLEN] = {0};
-	//--------------cfg-------------
+
 	int map_fd = -1;
 	const char *map_filename = default_map_filename;
 	const char *map_basedir = default_map_basedir;
-	//--------------cfg-------------
+
+	pid_t child_pid = -1;
 
     /* parse command line arguments */
 	init_cfg(&cfg);
@@ -658,7 +669,7 @@ int main(int argc, char **argv)
 	struct bpf_map *map = NULL;
 	bpf_map__for_each(map, obj)
 	{	
-		strcpy(map_path, cfg.map_folder_path);
+		strcpy(map_path, cfg.map_folder_path);	//TODO bpf_map__get_pin_path(map) should be used here
 		strcat(map_path, bpf_map__name(map));
 		if((cfg.map_reuse && strcmp(bpf_map__name(map), "flow_stats") == 0) ||	//skip flow_stats map when reusing
 			strcmp(bpf_map__name(map), bpf_map__name(skel->maps.bss)) == 0	||	//skip bss for global variables always
@@ -709,12 +720,24 @@ int main(int argc, char **argv)
 		// printf(Run `sudo cat /sys/kernel/debug/tracing/trace_pipe` to see bpf program output);
 		// #endif
 
-		flow_poll(map_fd, cfg.interval, cfg.log_output_path, cfg.dump_output_path, cfg.json);
+		if(cfg.test < 0)
+			flow_poll(map_fd, cfg.interval, cfg.log_output_path, cfg.dump_output_path, cfg.json);
+		else if (cfg.user_space_flowmngmt) {
+			child_pid = fork();	//fork
+			if (child_pid == 0)			//run flow_poll() in child
+				flow_poll(map_fd, cfg.interval, cfg.log_output_path, cfg.dump_output_path, cfg.json);
+			else if (child_pid < 0) {		//check error
+				fprintf(stderr, "ERROR: Failed to fork err(%d)\n", child_pid);
+				goto cleanup;
+			}
+			else
+				printf("child process ID: %d\n", child_pid);						//do nothing else (child_pid > 0 means we are in the parent process)
+		}
 	}
 	
 	
-	/* setup test */
-	if (cfg.test != NULL && cfg.test == 0) {
+	/* test run with bpf_prog_test_run() */
+	if (cfg.test == 0) {
 		struct ipv4_packet pkt_v4 = {
 			.eth.h_proto = __bpf_constant_htons(ETH_P_IP),
 			
@@ -748,6 +771,10 @@ int main(int argc, char **argv)
 		printf("average duration: %d ns\n", duration);
 		printf("last return value: %d\n", retval);
 		
+		/* kill child */
+		if (child_pid > 0)
+			kill(child_pid, SIGKILL);
+
 		/* unlink all maps / cleanup*/
 		map = NULL;
 		bpf_map__for_each(map, obj) {
@@ -758,8 +785,9 @@ int main(int argc, char **argv)
 	}
 
 
-	__u32 pkts=0;
-	if (cfg.test != NULL && cfg.test > 0) {
+	// __u32 pkts=0;
+	/* test run without flow management */
+	if (cfg.test > 0) {
 		/* wait duration */
 		for (i=0; i<cfg.test; i++) {
 			sleep(1);
@@ -780,9 +808,13 @@ int main(int argc, char **argv)
 
 		/* count pkts */
 		// pkts = (int) count_pkts(map_fd);
-		pkts = skel->bss->pkts;
-		printf("pkts: %d\n", pkts);
-		printf("map update error pkts: %d\n", skel->bss->err_pkts);
+		// pkts = skel->bss->pkts;
+		// printf("pkts: %d\n", pkts);
+		// printf("map update error pkts: %d\n", skel->bss->err_pkts);
+
+		/* kill child */
+		if (child_pid > 0)
+			kill(child_pid, SIGKILL);
 
 		/* unlink all maps / cleanup*/
 		map = NULL;
