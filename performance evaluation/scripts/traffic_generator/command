@@ -1,0 +1,11 @@
+python3.9 run_test.py --sender enp65s0f0 --receiver enp65s0f1 --dut-interface enp65s0f0 --dut-ip 10.0.0.2 --dest-mac 40:a6:b7:60:f0:01 --test-replays 3 --max-packetloss 0.01 --pcap-dir /root/
+																																			 
+																																			 
+																																			 
+./bpflowmon -i enp65s0f0,enp65s0f1 -d 40:a6:b7:5f:e9:a1 -m driver,driver -t 10
+
+
+
+
+tcpreplay -K -t -i enp65s0f0 --duration=10 --unique-ip-loops=9999999999 --unique-ip --loop 999999999999999 --netmap /root/pcaps/TCP_67.pcap
+
